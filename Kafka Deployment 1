@@ -1,0 +1,156 @@
+Kafka Deployment with adding volumes
+############### Kafka Deployment ##################
+
+
+-----**** Creating and attaching volumes ****-----
+
+## Create 3 volumes and attach to instances
+
+dsh -a sudo lsblk
+
+dsh -a sudo file -s /dev/xvdf   
+
+dsh -a sudo apt-get install xfsprogs
+
+dsh -a sudo mkfs -t xfs /dev/xvdf 
+
+dsh -a sudo mkdir /data/kafka
+
+dsh -a sudo mount /dev/xvdf /data/kafka 
+
+dsh -a sudo lsblk
+
+df -h /data/kafka
+
+## Making EBS automount on reboot
+
+dsh -a sudo cp /etc/fstab /etc/fstab.bak
+
+sudo su
+echo '/dev/xvdf /data/kafka xfs defaults 0 0' >> /etc/fstab
+exit
+
+ssh zk2 
+sudo su
+echo '/dev/xvdf /data/kafka xfs defaults 0 0' >> /etc/fstab
+exit
+
+ssh zk3
+sudo su
+echo '/dev/xvdf /data/kafka xfs defaults 0 0' >> /etc/fstab
+exit
+
+dsh -a sudo cat /etc/fstab
+
+## Reboot instances from console
+
+dsh -a sudo lsblk
+
+
+## Start zookeeper service 
+
+dsh -a sudo service zookeeper start
+
+
+-----**** Configuring system to open 100000 files ****----
+
+echo "* hard nofile 100000
+* soft nofile 100000" | sudo tee --append /etc/security/limits.conf
+
+
+ssh zk2
+echo "* hard nofile 100000
+* soft nofile 100000" | sudo tee --append /etc/security/limits.conf
+exit
+
+ssh zk3
+echo "* hard nofile 100000
+* soft nofile 100000" | sudo tee --append /etc/security/limits.conf
+exit
+
+## Reboot instances from console
+
+##
+
+dsh -a sudo chown -R ubuntu:ubuntu /data/kafka
+
+dsh -a sudo service zookeeper start
+
+
+------**** Configure kafka properties ****-----
+
+dsh -a rm /usr/local/kafka/config/server.properties 
+
+nano /usr/local/kafka/config/server.properties
+## copy contents from file
+
+ssh zk2
+nano /usr/local/kafka/config/server.properties
+## copy contents from file (Make necessary changes)
+
+
+-----**** Configure kafka bootscripts ****-----
+
+sudo nano /etc/init.d/kafka
+
+sudo chmod +x /etc/init.d/kafka
+
+sudo chown root:root /etc/init.d/kafka 
+
+sudo update-rc.d kafka defaults
+
+## Do this on other two nodes
+
+ssh zk2
+sudo nano /etc/init.d/kafka
+sudo chmod +x /etc/init.d/kafka
+sudo chown root:root /etc/init.d/kafka 
+sudo update-rc.d kafka defaults
+
+ssh zk3
+sudo nano /etc/init.d/kafka
+sudo chmod +x /etc/init.d/kafka
+sudo chown root:root /etc/init.d/kafka 
+sudo update-rc.d kafka defaults
+
+
+-----**** Start kafka service ****-----
+
+dsh -a sudo service kafka start
+
+nc -vz kf2 9092
+nc -vz kf3 9092
+
+## Check logs
+
+tail -f /usr/local/kafka/logs/server.log 
+
+ssh zk2 
+tail -f /usr/local/kafka/logs/server.log 
+
+ssh zk3
+tail -f /usr/local/kafka/logs/server.log 
+
+
+-----**** Working with kafka ****-----
+
+## Create a topic
+
+kafka-topics.sh --zookeeper zk1:2181,zk2:2181,zk3:2181/kafka --create --topic my-topic --replication-factor 3 --partitions 3 
+
+## Create a producer
+
+kafka-console-producer.sh --broker-list kf1:9092,kf2:9092,kf3:9092 --topic my-topic 
+(publish some data)
+
+## Create a consumer
+
+kafka-console-consumer.sh --bootstrap-server kf1:9092,kf2:9092,kf3:9092 --topic my-topic --from-beginning
+
+## Create another topic
+
+kafka-topics.sh --zookeeper zk1:2181,zk2:2181,zk3:2181/kafka --create --topic my-topic2 --replication-factor 3 --partitions 3 
+
+## List topics 
+
+kafka-topics.sh --zookeeper zk1:2181,zk2:2181,zk3:2181/kafka --list
